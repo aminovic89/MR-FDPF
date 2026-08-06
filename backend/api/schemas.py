@@ -65,3 +65,15 @@ class SimulateBuildingResponse(BaseModel):
     floors_power_dbm: list[list[list[float]]]
     elapsed_s: float
     mode: str
+
+
+class JobStartResponse(BaseModel):
+    job_id: str
+
+
+class JobStatusResponse(BaseModel):
+    status: Literal["pending", "running", "done", "error"]
+    progress: float
+    message: str
+    result: SimulateBuildingResponse | None = None
+    error: str | None = None

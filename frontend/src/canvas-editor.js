@@ -1,4 +1,4 @@
-import { renderHeatmapToCanvas } from "./heatmap-render.js?v=3";
+import { renderHeatmapToCanvas } from "./heatmap-render.js?v=7";
 
 const MATERIAL_COLORS = {
   concrete: "#8a8a8a",
@@ -10,6 +10,7 @@ const MATERIAL_COLORS = {
 };
 
 const MAX_CANVAS_DIM = 700;
+const DOOR_WIDTH = 0.9; // meters, standard door opening
 
 function emptyFloor() {
   return { walls: [], sources: [] };
@@ -26,6 +27,9 @@ export class CanvasEditor {
     this.sourcePower = 20;
     this.lastFloorsResult = null; // array of 2D power_dbm grids, one per floor
     this.lastRange = null;
+    this.lastGridInfo = null; // { dx, nx, ny }
+    this.inspectPoint = null; // { xm, ym, value }
+    this.onInspect = null; // callback(value, xm, ym)
     this.dragStart = null;
 
     this.scale = this._computeScale();
@@ -95,7 +99,24 @@ export class CanvasEditor {
   setCurrentFloor(index) {
     if (index < 0 || index >= this.building.floors.length) return;
     this.currentFloor = index;
+    if (this.inspectPoint) {
+      this.inspectPoint.value = this.getValueAt(this.inspectPoint.xm, this.inspectPoint.ym);
+      if (this.onInspect) this.onInspect(this.inspectPoint.value, this.inspectPoint.xm, this.inspectPoint.ym);
+    }
     this.render();
+  }
+
+  /** dBm value for the currently displayed floor at a point in meters, or
+   * null if there's no simulation result yet. */
+  getValueAt(xm, ym) {
+    const floorPower = this.lastFloorsResult?.[this.currentFloor];
+    if (!floorPower || !this.lastGridInfo) return null;
+    const { dx, nx, ny } = this.lastGridInfo;
+    let ix = Math.round(xm / dx);
+    let iy = Math.round(ym / dx);
+    ix = Math.min(Math.max(ix, 0), nx - 1);
+    iy = Math.min(Math.max(iy, 0), ny - 1);
+    return floorPower[iy][ix];
   }
 
   clearFloor() {
@@ -141,7 +162,76 @@ export class CanvasEditor {
     } else if (this.tool === "erase") {
       this._eraseNear(xm, ym);
       this.render();
+    } else if (this.tool === "door") {
+      this._splitWallForDoor(xm, ym);
+      this.render();
+    } else if (this.tool === "inspect") {
+      const value = this.getValueAt(xm, ym);
+      this.inspectPoint = { xm, ym, value };
+      this.render();
+      if (this.onInspect) this.onInspect(value, xm, ym);
     }
+  }
+
+  /** Cut a DOOR_WIDTH-wide opening into the nearest wall at (xm, ym): the
+   * wall is replaced by zero, one or two shorter walls with a real gap in
+   * between (no wall material there), rather than a distinct "door"
+   * object -- the gap itself is what makes it an opening. */
+  _splitWallForDoor(xm, ym) {
+    const tol = 0.2;
+    let best = null;
+    let bestDist = Infinity;
+    for (const w of this.floor.walls) {
+      const d = this._distToSegment(xm, ym, w);
+      if (d < bestDist) {
+        bestDist = d;
+        best = w;
+      }
+    }
+    if (!best || bestDist > tol + best.thickness / 2) return false;
+
+    const dx = best.x2 - best.x1;
+    const dy = best.y2 - best.y1;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.01) return false;
+    const ux = dx / len;
+    const uy = dy / len;
+
+    let t = (dx * (xm - best.x1) + dy * (ym - best.y1)) / (len * len);
+    t = Math.max(0, Math.min(1, t));
+    const centerDist = t * len;
+
+    const half = Math.min(DOOR_WIDTH / 2, len / 2 - 0.05);
+    if (half <= 0) return false; // wall too short for a door
+
+    const gapStart = centerDist - half;
+    const gapEnd = centerDist + half;
+
+    const newWalls = [];
+    if (gapStart > 0.05) {
+      newWalls.push({
+        x1: best.x1,
+        y1: best.y1,
+        x2: best.x1 + ux * gapStart,
+        y2: best.y1 + uy * gapStart,
+        material: best.material,
+        thickness: best.thickness,
+      });
+    }
+    if (len - gapEnd > 0.05) {
+      newWalls.push({
+        x1: best.x1 + ux * gapEnd,
+        y1: best.y1 + uy * gapEnd,
+        x2: best.x2,
+        y2: best.y2,
+        material: best.material,
+        thickness: best.thickness,
+      });
+    }
+
+    const idx = this.floor.walls.indexOf(best);
+    this.floor.walls.splice(idx, 1, ...newWalls);
+    return true;
   }
 
   _onMouseMove(e) {
@@ -182,11 +272,13 @@ export class CanvasEditor {
     return Math.hypot(px - projx, py - projy);
   }
 
-  /** result: { floors_power_dbm: number[][][], ... }, range: [min,max] shared
-   * across all floors so switching floor tabs doesn't jump the color scale. */
-  setResult(floorsPowerDbm, range) {
+  /** floorsPowerDbm: number[][][], range: [min,max] shared across all floors
+   * so switching floor tabs doesn't jump the color scale, gridInfo:
+   * { dx, nx, ny } needed to map a clicked point back to a grid cell. */
+  setResult(floorsPowerDbm, range, gridInfo) {
     this.lastFloorsResult = floorsPowerDbm;
     this.lastRange = range;
+    this.lastGridInfo = gridInfo;
     this.render();
   }
 
@@ -206,6 +298,25 @@ export class CanvasEditor {
 
     for (const w of this.floor.walls) this._drawWall(w);
     for (const s of this.floor.sources) this._drawSource(s);
+    if (this.inspectPoint) this._drawInspectMarker(this.inspectPoint);
+  }
+
+  _drawInspectMarker(point) {
+    const [x, y] = this.toPixels(point.xm, point.ym);
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y);
+    ctx.lineTo(x + 8, y);
+    ctx.moveTo(x, y - 8);
+    ctx.lineTo(x, y + 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   _drawWall(w) {

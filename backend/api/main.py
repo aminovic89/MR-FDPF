@@ -7,9 +7,12 @@ from fastapi.staticfiles import StaticFiles
 
 from mrfdpf.geometry import Building, Floor, Scene, Source, Wall
 from mrfdpf.materials import MATERIALS
-from mrfdpf.solver import run_building_simulation, run_simulation
+from mrfdpf.solver import BuildingSimulationResult, run_building_simulation, run_simulation
 
+from . import jobs
 from .schemas import (
+    JobStartResponse,
+    JobStatusResponse,
     MaterialOut,
     SimulateBuildingRequest,
     SimulateBuildingResponse,
@@ -77,8 +80,7 @@ def simulate(req: SimulateRequest):
     )
 
 
-@app.post("/api/simulate_building", response_model=SimulateBuildingResponse)
-def simulate_building(req: SimulateBuildingRequest):
+def _build_building(req: SimulateBuildingRequest) -> Building:
     if not req.floors:
         raise HTTPException(400, "at least one floor is required")
     if not any(f.sources for f in req.floors):
@@ -88,7 +90,7 @@ def simulate_building(req: SimulateBuildingRequest):
             if wall.material not in MATERIALS:
                 raise HTTPException(400, f"unknown material '{wall.material}'")
 
-    building = Building(
+    return Building(
         width=req.width,
         height=req.height,
         floor_attenuation_db=req.floor_attenuation_db,
@@ -101,6 +103,21 @@ def simulate_building(req: SimulateBuildingRequest):
         ],
     )
 
+
+def _building_result_to_response(result: BuildingSimulationResult) -> SimulateBuildingResponse:
+    return SimulateBuildingResponse(
+        nx=result.grid_shape[1],
+        ny=result.grid_shape[0],
+        dx=result.dx,
+        floors_power_dbm=[p.tolist() for p in result.floors_power_dbm],
+        elapsed_s=result.elapsed_s,
+        mode=result.mode,
+    )
+
+
+@app.post("/api/simulate_building", response_model=SimulateBuildingResponse)
+def simulate_building(req: SimulateBuildingRequest):
+    building = _build_building(req)
     try:
         result = run_building_simulation(
             building,
@@ -111,13 +128,44 @@ def simulate_building(req: SimulateBuildingRequest):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    return SimulateBuildingResponse(
-        nx=result.grid_shape[1],
-        ny=result.grid_shape[0],
-        dx=result.dx,
-        floors_power_dbm=[p.tolist() for p in result.floors_power_dbm],
-        elapsed_s=result.elapsed_s,
-        mode=result.mode,
+    return _building_result_to_response(result)
+
+
+@app.post("/api/simulate_building/start", response_model=JobStartResponse)
+def start_simulate_building(req: SimulateBuildingRequest):
+    """Same simulation as /api/simulate_building, but run in a background
+    thread and polled via /api/jobs/{id} -- for a fine-resolution scene the
+    synchronous endpoint can take tens of seconds, during which a plain
+    blocking call would leave the UI with no feedback at all."""
+    building = _build_building(req)
+    job = jobs.create_job()
+    jobs.run_in_background(
+        job,
+        run_building_simulation,
+        building,
+        freq_hz=req.freq_mhz * 1e6,
+        points_per_wavelength=req.points_per_wavelength,
+        mode=req.mode,
+    )
+    return JobStartResponse(job_id=job.id)
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job_status(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+
+    result = None
+    if job.status == "done":
+        result = _building_result_to_response(job.result)
+
+    return JobStatusResponse(
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        result=result,
+        error=job.error,
     )
 
 

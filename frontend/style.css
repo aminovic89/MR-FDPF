@@ -73,11 +73,13 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .panel section > button { display: block; width: 100%; margin-bottom: 0.5rem; }
 
-.tool-buttons { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.tool-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
 .tool-buttons button {
-  flex: 1;
+  flex: 1 1 calc(50% - 0.2rem);
   background: #1c1f27;
   border: 1px solid #2c2f3a;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.3rem;
 }
 .tool-buttons button.active { background: #2563eb; border-color: #2563eb; }
 
@@ -91,6 +93,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 .floor-tabs button.active { background: #2563eb; border-color: #2563eb; }
 
 .status { font-size: 0.8rem; color: #9aa0ac; min-height: 1.2em; }
+
+.progress-wrap {
+  height: 6px;
+  background: #1c1f27;
+  border-radius: 3px;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
 
 .canvas-wrap {
   flex: 1;
@@ -110,3 +126,10 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 
 #legend-canvas { border-radius: 4px; }
+
+.point-readout {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e5e7eb;
+  min-height: 1.2em;
+}

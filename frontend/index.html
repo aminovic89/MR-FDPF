@@ -31,8 +31,10 @@
         <h2>Outils (étage courant)</h2>
         <div class="tool-buttons">
           <button data-tool="wall" class="active">Mur</button>
+          <button data-tool="door">Porte</button>
           <button data-tool="source">Source</button>
           <button data-tool="erase">Effacer</button>
+          <button data-tool="inspect">Inspecter</button>
         </div>
         <label>Matériau <select id="material-select"></select></label>
         <label>Puissance source (dBm) <input id="source-power" type="number" value="20" step="1"></label>
@@ -49,6 +51,10 @@
           </select>
         </label>
         <button id="simulate-btn">Simuler</button>
+        <button id="compare-btn" class="secondary">Comparer mono/multi</button>
+        <div id="progress-wrap" class="progress-wrap" hidden>
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
         <p id="status" class="status"></p>
       </section>
       <section>
@@ -61,6 +67,7 @@
     </aside>
     <main class="canvas-wrap">
       <canvas id="scene-canvas"></canvas>
+      <p id="point-readout" class="point-readout"></p>
       <canvas id="legend-canvas" width="300" height="34"></canvas>
     </main>
   </div>
@@ -69,6 +76,6 @@
   window.addEventListener('error', (e) => console.error('GLOBAL ERROR', e.message, e.filename, e.lineno, e.colno));
   window.addEventListener('unhandledrejection', (e) => console.error('REJECTION', e.reason && e.reason.message, e.reason && e.reason.stack));
 </script>
-<script type="module" src="/static/src/main.js?v=3"></script>
+<script type="module" src="/static/src/main.js?v=7"></script>
 </body>
 </html>

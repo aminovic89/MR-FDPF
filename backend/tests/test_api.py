@@ -1,8 +1,22 @@
+import time
+
 from fastapi.testclient import TestClient
 
 from api.main import app
 
 client = TestClient(app)
+
+
+def _poll_job(job_id: str, timeout_s: float = 10.0) -> dict:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        resp = client.get(f"/api/jobs/{job_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["status"] in ("done", "error"):
+            return data
+        time.sleep(0.05)
+    raise TimeoutError(f"job {job_id} did not finish in {timeout_s}s")
 
 
 def test_list_materials():
@@ -77,3 +91,35 @@ def test_simulate_building_rejects_no_sources():
     payload = {"width": 1.0, "height": 1.0, "floors": [{"walls": [], "sources": []}]}
     resp = client.post("/api/simulate_building", json=payload)
     assert resp.status_code == 400
+
+
+def test_async_job_matches_sync_result():
+    payload = {
+        "width": 2.0,
+        "height": 2.0,
+        "floors": [{"walls": [], "sources": [{"x": 1.0, "y": 1.0, "power_dbm": 20.0}]}],
+        "freq_mhz": 2400.0,
+        "points_per_wavelength": 15,
+        "mode": "single",
+    }
+    sync_resp = client.post("/api/simulate_building", json=payload).json()
+
+    start_resp = client.post("/api/simulate_building/start", json=payload)
+    assert start_resp.status_code == 200
+    job_id = start_resp.json()["job_id"]
+
+    job = _poll_job(job_id)
+    assert job["status"] == "done"
+    assert job["progress"] == 1.0
+    assert job["result"]["floors_power_dbm"] == sync_resp["floors_power_dbm"]
+
+
+def test_async_job_reports_error_for_no_sources():
+    payload = {"width": 1.0, "height": 1.0, "floors": [{"walls": [], "sources": []}]}
+    resp = client.post("/api/simulate_building/start", json=payload)
+    assert resp.status_code == 400
+
+
+def test_job_not_found():
+    resp = client.get("/api/jobs/does-not-exist")
+    assert resp.status_code == 404

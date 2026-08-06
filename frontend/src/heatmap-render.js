@@ -81,7 +81,7 @@ export function renderHeatmapToCanvas(powerDbm, targetCanvas, [vMin, vMax]) {
   ctx.drawImage(off, 0, 0, targetCanvas.width, targetCanvas.height);
 }
 
-export function drawLegend(canvas, [vMin, vMax] = [-100, -20]) {
+export function drawLegend(canvas, [vMin, vMax] = [-100, -20], unit = "dBm", decimals = 0) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
@@ -96,7 +96,7 @@ export function drawLegend(canvas, [vMin, vMax] = [-100, -20]) {
   ctx.fillStyle = "#cbd0d9";
   ctx.font = "11px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText(`${vMin.toFixed(0)} dBm`, 2, h - 2);
+  ctx.fillText(`${vMin.toFixed(decimals)} ${unit}`, 2, h - 2);
   ctx.textAlign = "right";
-  ctx.fillText(`${vMax.toFixed(0)} dBm`, w - 2, h - 2);
+  ctx.fillText(`${vMax.toFixed(decimals)} ${unit}`, w - 2, h - 2);
 }

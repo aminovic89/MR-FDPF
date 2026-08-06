@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -111,6 +112,7 @@ def run_building_simulation(
     freq_hz: float,
     points_per_wavelength: int = 15,
     mode: str = "single",
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> BuildingSimulationResult:
     """Multi-floor coverage. Each floor is solved as its own independent 2D
     problem against its own walls -- this is a genuine 2D FDPF solve per
@@ -141,6 +143,11 @@ def run_building_simulation(
     n_floors = len(building.floors)
     power_linear_mw = [np.zeros((ny, nx)) for _ in range(n_floors)]
 
+    total_sources = sum(len(floor.sources) for floor in building.floors)
+    completed = 0
+    if progress_callback:
+        progress_callback(0.0, f"grille {ny}x{nx} construite, 0/{total_sources} sources résolues")
+
     t0 = time.perf_counter()
     for source_floor, floor in enumerate(building.floors):
         grid = grids[source_floor]
@@ -151,6 +158,9 @@ def run_building_simulation(
                 floor_loss = building.floor_attenuation_db * abs(k - source_floor)
                 power_dbm = source.power_dbm + rel_dbm - floor_loss
                 power_linear_mw[k] += 10 ** (power_dbm / 10.0)
+            completed += 1
+            if progress_callback:
+                progress_callback(completed / total_sources, f"{completed}/{total_sources} sources résolues")
     elapsed = time.perf_counter() - t0
 
     floors_power_dbm = []

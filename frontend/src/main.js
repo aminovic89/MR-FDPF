@@ -1,6 +1,6 @@
-import { CanvasEditor } from "./canvas-editor.js?v=3";
-import { computeCombinedRange, drawLegend } from "./heatmap-render.js?v=3";
-import { fetchMaterials, simulateBuilding } from "./api-client.js?v=3";
+import { CanvasEditor } from "./canvas-editor.js?v=7";
+import { computeCombinedRange, drawLegend } from "./heatmap-render.js?v=7";
+import { fetchMaterials, getJobStatus, simulateBuilding, startSimulateBuilding } from "./api-client.js?v=7";
 
 const canvas = document.getElementById("scene-canvas");
 const editor = new CanvasEditor(canvas);
@@ -14,6 +14,7 @@ const ppwInput = document.getElementById("ppw");
 const modeSelect = document.getElementById("mode-select");
 const powerInput = document.getElementById("source-power");
 const simulateBtn = document.getElementById("simulate-btn");
+const compareBtn = document.getElementById("compare-btn");
 const clearBtn = document.getElementById("clear-btn");
 const statusEl = document.getElementById("status");
 const legendCanvas = document.getElementById("legend-canvas");
@@ -25,6 +26,37 @@ const floorTabsEl = document.getElementById("floor-tabs");
 const addFloorBtn = document.getElementById("add-floor-btn");
 const removeFloorBtn = document.getElementById("remove-floor-btn");
 const floorAttenuationInput = document.getElementById("floor-attenuation");
+const pointReadout = document.getElementById("point-readout");
+const progressWrap = document.getElementById("progress-wrap");
+const progressBar = document.getElementById("progress-bar");
+
+function setProgress(fraction) {
+  progressWrap.hidden = false;
+  progressBar.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
+}
+function hideProgress() {
+  progressWrap.hidden = true;
+  progressBar.style.width = "0%";
+}
+
+async function pollJob(jobId, { pollMs = 300 } = {}) {
+  while (true) {
+    const job = await getJobStatus(jobId);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new Error(job.error || "la simulation a échoué");
+    setProgress(job.progress);
+    statusEl.textContent = job.message || "Simulation en cours...";
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+editor.onInspect = (value, xm, ym) => {
+  if (value === null) {
+    pointReadout.textContent = "Lance une simulation avant d'inspecter un point.";
+  } else {
+    pointReadout.textContent = `Point (${xm.toFixed(2)} m, ${ym.toFixed(2)} m): ${value.toFixed(1)} dBm`;
+  }
+};
 
 const FLOOR_LABELS = ["RDC"];
 function floorLabel(i) {
@@ -103,8 +135,11 @@ simulateBtn.addEventListener("click", async () => {
     statusEl.textContent = "Ajoute au moins une source (sur un étage) avant de simuler.";
     return;
   }
-  statusEl.textContent = "Simulation en cours...";
+  statusEl.textContent = "Démarrage de la simulation...";
+  setProgress(0);
   simulateBtn.disabled = true;
+  compareBtn.disabled = true;
+  const t0 = performance.now();
   try {
     const payload = {
       width: editor.building.width,
@@ -115,14 +150,68 @@ simulateBtn.addEventListener("click", async () => {
       points_per_wavelength: parseInt(ppwInput.value, 10),
       mode: modeSelect.value,
     };
-    const result = await simulateBuilding(payload);
+    const { job_id } = await startSimulateBuilding(payload);
+    const result = await pollJob(job_id);
     const range = computeCombinedRange(result.floors_power_dbm);
-    editor.setResult(result.floors_power_dbm, range);
+    editor.setResult(result.floors_power_dbm, range, { dx: result.dx, nx: result.nx, ny: result.ny });
     drawLegend(legendCanvas, range);
-    statusEl.textContent = `Terminé en ${result.elapsed_s.toFixed(2)}s (grille ${result.nx}x${result.ny}, ${editor.floorCount} étage(s), mode ${result.mode}).`;
+    const wallClock = (performance.now() - t0) / 1000;
+    statusEl.textContent =
+      `Terminé en ${result.elapsed_s.toFixed(2)}s (${wallClock.toFixed(1)}s avec le réseau/polling), ` +
+      `grille ${result.nx}x${result.ny}, ${editor.floorCount} étage(s), mode ${result.mode}.`;
   } catch (err) {
     statusEl.textContent = `Erreur: ${err.message}`;
   } finally {
+    hideProgress();
+    simulateBtn.disabled = false;
+    compareBtn.disabled = false;
+  }
+});
+
+compareBtn.addEventListener("click", async () => {
+  const hasSource = editor.building.floors.some((f) => f.sources.length > 0);
+  if (!hasSource) {
+    statusEl.textContent = "Ajoute au moins une source avant de comparer.";
+    return;
+  }
+  statusEl.textContent = "Comparaison mono/multi en cours...";
+  compareBtn.disabled = true;
+  simulateBtn.disabled = true;
+  try {
+    const basePayload = {
+      width: editor.building.width,
+      height: editor.building.height,
+      floors: editor.building.floors,
+      floor_attenuation_db: editor.building.floorAttenuationDb,
+      freq_mhz: parseFloat(freqInput.value),
+      points_per_wavelength: parseInt(ppwInput.value, 10),
+    };
+    const [single, multi] = await Promise.all([
+      simulateBuilding({ ...basePayload, mode: "single" }),
+      simulateBuilding({ ...basePayload, mode: "multi" }),
+    ]);
+
+    const diffGrids = single.floors_power_dbm.map((grid, fi) =>
+      grid.map((row, iy) => row.map((v, ix) => Math.abs(v - multi.floors_power_dbm[fi][iy][ix])))
+    );
+    let maxDiff = 0;
+    for (const grid of diffGrids) {
+      for (const row of grid) {
+        for (const v of row) if (v > maxDiff) maxDiff = v;
+      }
+    }
+
+    const range = computeCombinedRange(diffGrids);
+    editor.setResult(diffGrids, range, { dx: single.dx, nx: single.nx, ny: single.ny });
+    drawLegend(legendCanvas, range, "dB", 4);
+    statusEl.textContent =
+      `Écart max mono/multi: ${maxDiff.toExponential(2)} dB ` +
+      `(mono ${single.elapsed_s.toFixed(2)}s, multi ${multi.elapsed_s.toFixed(2)}s). ` +
+      `Relance "Simuler" pour revenir à la carte normale.`;
+  } catch (err) {
+    statusEl.textContent = `Erreur: ${err.message}`;
+  } finally {
+    compareBtn.disabled = false;
     simulateBtn.disabled = false;
   }
 });

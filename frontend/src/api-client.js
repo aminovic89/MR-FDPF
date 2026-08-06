@@ -29,3 +29,13 @@ export async function simulate(payload) {
 export async function simulateBuilding(payload) {
   return post("/simulate_building", payload);
 }
+
+export async function startSimulateBuilding(payload) {
+  return post("/simulate_building/start", payload);
+}
+
+export async function getJobStatus(jobId) {
+  const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+  if (!res.ok) throw new Error(`job status failed (${res.status})`);
+  return res.json();
+}
