@@ -6,8 +6,8 @@ export async function fetchMaterials() {
   return res.json();
 }
 
-export async function simulate(payload) {
-  const res = await fetch(`${API_BASE}/simulate`, {
+async function post(path, payload) {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -17,7 +17,15 @@ export async function simulate(payload) {
     const detail = Array.isArray(err.detail)
       ? err.detail.map((d) => d.msg).join(", ")
       : err.detail;
-    throw new Error(detail || `simulate failed (${res.status})`);
+    throw new Error(detail || `request failed (${res.status})`);
   }
   return res.json();
+}
+
+export async function simulate(payload) {
+  return post("/simulate", payload);
+}
+
+export async function simulateBuilding(payload) {
+  return post("/simulate_building", payload);
 }

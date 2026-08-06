@@ -18,23 +18,40 @@ function colorForValue(v, vMin, vMax) {
   return STOPS[STOPS.length - 1][1];
 }
 
+const LOW_PERCENTILE = 0.02;
+const HIGH_PERCENTILE = 0.98;
+
+/** 2nd/98th percentile range rather than raw min/max: a near-perfect
+ * reflector (e.g. a metal wall) can drive a handful of shadow cells to
+ * extreme lows (deep interference nulls), and using the raw min would let
+ * those few outlier cells dominate the whole color scale, flattening the
+ * contrast everywhere else. */
+function percentileRange(flatValues) {
+  const finite = flatValues.filter((v) => isFinite(v));
+  if (finite.length === 0) return [-100, -20];
+  finite.sort((a, b) => a - b);
+  const lo = finite[Math.floor(LOW_PERCENTILE * (finite.length - 1))];
+  const hi = finite[Math.floor(HIGH_PERCENTILE * (finite.length - 1))];
+  if (lo === hi) return [-100, -20];
+  return [lo, hi];
+}
+
 /** Range of a power_dbm 2D array, so the color scale always matches the
  * actual scene (absolute dBm depends on tx power, room size and frequency,
  * so a fixed hardcoded range saturates or flattens most scenes). */
 export function computeRange(powerDbm) {
-  let vMin = Infinity;
-  let vMax = -Infinity;
-  for (const row of powerDbm) {
-    for (const v of row) {
-      if (v < vMin) vMin = v;
-      if (v > vMax) vMax = v;
-    }
-  }
-  if (!isFinite(vMin) || !isFinite(vMax) || vMin === vMax) {
-    vMin = -100;
-    vMax = -20;
-  }
-  return [vMin, vMax];
+  const flat = [];
+  for (const row of powerDbm) for (const v of row) flat.push(v);
+  return percentileRange(flat);
+}
+
+/** Same as computeRange but across several floors' grids at once, so
+ * switching floor tabs after a multi-floor simulation keeps one consistent
+ * color scale instead of rescaling per floor. */
+export function computeCombinedRange(gridsList) {
+  const flat = [];
+  for (const grid of gridsList) for (const row of grid) for (const v of row) flat.push(v);
+  return percentileRange(flat);
 }
 
 export function renderHeatmapToCanvas(powerDbm, targetCanvas, [vMin, vMax]) {

@@ -1,4 +1,4 @@
-import { computeRange, renderHeatmapToCanvas } from "./heatmap-render.js";
+import { renderHeatmapToCanvas } from "./heatmap-render.js?v=3";
 
 const MATERIAL_COLORS = {
   concrete: "#8a8a8a",
@@ -11,15 +11,21 @@ const MATERIAL_COLORS = {
 
 const MAX_CANVAS_DIM = 700;
 
+function emptyFloor() {
+  return { walls: [], sources: [] };
+}
+
 export class CanvasEditor {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
-    this.scene = { width: 8, height: 6, walls: [], sources: [] };
+    this.building = { width: 8, height: 6, floorAttenuationDb: 15, floors: [emptyFloor()] };
+    this.currentFloor = 0;
     this.tool = "wall";
     this.material = "concrete";
     this.sourcePower = 20;
-    this.lastResult = null;
+    this.lastFloorsResult = null; // array of 2D power_dbm grids, one per floor
+    this.lastRange = null;
     this.dragStart = null;
 
     this.scale = this._computeScale();
@@ -36,33 +42,79 @@ export class CanvasEditor {
     this.render();
   }
 
+  get floor() {
+    return this.building.floors[this.currentFloor];
+  }
+
+  get floorCount() {
+    return this.building.floors.length;
+  }
+
   _computeScale() {
-    const scale = MAX_CANVAS_DIM / Math.max(this.scene.width, this.scene.height);
+    const scale = MAX_CANVAS_DIM / Math.max(this.building.width, this.building.height);
     return Math.max(15, Math.min(120, scale));
   }
 
   _resizeCanvas() {
-    this.canvas.width = Math.round(this.scene.width * this.scale);
-    this.canvas.height = Math.round(this.scene.height * this.scale);
+    this.canvas.width = Math.round(this.building.width * this.scale);
+    this.canvas.height = Math.round(this.building.height * this.scale);
   }
 
   setDomain(width, height) {
-    this.scene.width = width;
-    this.scene.height = height;
+    this.building.width = width;
+    this.building.height = height;
     this.scale = this._computeScale();
     this._resizeCanvas();
-    this.lastResult = null;
+    this.lastFloorsResult = null;
     this.render();
+  }
+
+  setFloorAttenuation(db) {
+    this.building.floorAttenuationDb = db;
   }
 
   setTool(tool) { this.tool = tool; }
   setMaterial(material) { this.material = material; }
   setSourcePower(p) { this.sourcePower = p; }
 
-  clearScene() {
-    this.scene.walls = [];
-    this.scene.sources = [];
-    this.lastResult = null;
+  addFloor() {
+    this.building.floors.push(emptyFloor());
+    this.currentFloor = this.building.floors.length - 1;
+    this.lastFloorsResult = null;
+    this.render();
+  }
+
+  removeCurrentFloor() {
+    if (this.building.floors.length <= 1) return;
+    this.building.floors.splice(this.currentFloor, 1);
+    this.currentFloor = Math.min(this.currentFloor, this.building.floors.length - 1);
+    this.lastFloorsResult = null;
+    this.render();
+  }
+
+  setCurrentFloor(index) {
+    if (index < 0 || index >= this.building.floors.length) return;
+    this.currentFloor = index;
+    this.render();
+  }
+
+  clearFloor() {
+    this.floor.walls = [];
+    this.floor.sources = [];
+    this.render();
+  }
+
+  loadBuilding(building) {
+    this.building = {
+      width: building.width,
+      height: building.height,
+      floorAttenuationDb: building.floorAttenuationDb ?? 15,
+      floors: building.floors && building.floors.length ? building.floors : [emptyFloor()],
+    };
+    this.currentFloor = 0;
+    this.scale = this._computeScale();
+    this._resizeCanvas();
+    this.lastFloorsResult = null;
     this.render();
   }
 
@@ -84,7 +136,7 @@ export class CanvasEditor {
     if (this.tool === "wall") {
       this.dragStart = [xm, ym];
     } else if (this.tool === "source") {
-      this.scene.sources.push({ x: xm, y: ym, power_dbm: this.sourcePower });
+      this.floor.sources.push({ x: xm, y: ym, power_dbm: this.sourcePower });
       this.render();
     } else if (this.tool === "erase") {
       this._eraseNear(xm, ym);
@@ -105,7 +157,7 @@ export class CanvasEditor {
       const [xm, ym] = this._eventToMeters(e);
       const [sx, sy] = this.dragStart;
       if (Math.hypot(xm - sx, ym - sy) > 0.05) {
-        this.scene.walls.push({ x1: sx, y1: sy, x2: xm, y2: ym, material: this.material, thickness: 0.15 });
+        this.floor.walls.push({ x1: sx, y1: sy, x2: xm, y2: ym, material: this.material, thickness: 0.15 });
       }
       this.dragStart = null;
       this.render();
@@ -114,8 +166,8 @@ export class CanvasEditor {
 
   _eraseNear(xm, ym) {
     const tol = 0.15;
-    this.scene.sources = this.scene.sources.filter((s) => Math.hypot(s.x - xm, s.y - ym) > tol);
-    this.scene.walls = this.scene.walls.filter((w) => this._distToSegment(xm, ym, w) > tol + w.thickness / 2);
+    this.floor.sources = this.floor.sources.filter((s) => Math.hypot(s.x - xm, s.y - ym) > tol);
+    this.floor.walls = this.floor.walls.filter((w) => this._distToSegment(xm, ym, w) > tol + w.thickness / 2);
   }
 
   _distToSegment(px, py, w) {
@@ -130,9 +182,11 @@ export class CanvasEditor {
     return Math.hypot(px - projx, py - projy);
   }
 
-  setResult(result) {
-    this.lastResult = result;
-    this.lastRange = computeRange(result.power_dbm);
+  /** result: { floors_power_dbm: number[][][], ... }, range: [min,max] shared
+   * across all floors so switching floor tabs doesn't jump the color scale. */
+  setResult(floorsPowerDbm, range) {
+    this.lastFloorsResult = floorsPowerDbm;
+    this.lastRange = range;
     this.render();
   }
 
@@ -141,16 +195,17 @@ export class CanvasEditor {
     ctx.fillStyle = "#12141a";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    if (this.lastResult) {
-      renderHeatmapToCanvas(this.lastResult.power_dbm, this.canvas, this.lastRange);
+    const floorPower = this.lastFloorsResult?.[this.currentFloor];
+    if (floorPower) {
+      renderHeatmapToCanvas(floorPower, this.canvas, this.lastRange);
     }
 
     ctx.strokeStyle = "#555";
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, this.canvas.width - 1, this.canvas.height - 1);
 
-    for (const w of this.scene.walls) this._drawWall(w);
-    for (const s of this.scene.sources) this._drawSource(s);
+    for (const w of this.floor.walls) this._drawWall(w);
+    for (const s of this.floor.sources) this._drawSource(s);
   }
 
   _drawWall(w) {

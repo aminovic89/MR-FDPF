@@ -46,3 +46,34 @@ def test_simulate_rejects_no_sources():
     payload = {"width": 1.0, "height": 1.0, "walls": [], "sources": []}
     resp = client.post("/api/simulate", json=payload)
     assert resp.status_code in (400, 422)
+
+
+def test_simulate_building_two_floors():
+    payload = {
+        "width": 2.0,
+        "height": 2.0,
+        "floors": [
+            {"walls": [], "sources": [{"x": 1.0, "y": 1.0, "power_dbm": 20.0}]},
+            {"walls": [], "sources": []},
+        ],
+        "floor_attenuation_db": 12.0,
+        "freq_mhz": 2400.0,
+        "points_per_wavelength": 15,
+        "mode": "single",
+    }
+    resp = client.post("/api/simulate_building", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["floors_power_dbm"]) == 2
+    assert len(data["floors_power_dbm"][0]) == data["ny"]
+
+
+def test_simulate_building_rejects_no_floors():
+    resp = client.post("/api/simulate_building", json={"width": 1.0, "height": 1.0, "floors": []})
+    assert resp.status_code in (400, 422)
+
+
+def test_simulate_building_rejects_no_sources():
+    payload = {"width": 1.0, "height": 1.0, "floors": [{"walls": [], "sources": []}]}
+    resp = client.post("/api/simulate_building", json=payload)
+    assert resp.status_code == 400

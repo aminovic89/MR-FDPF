@@ -41,3 +41,27 @@ class MaterialOut(BaseModel):
     name: str
     eps_r: float
     sigma: float
+
+
+class FloorIn(BaseModel):
+    walls: list[WallIn] = Field(default_factory=list)
+    sources: list[SourceIn] = Field(default_factory=list)
+
+
+class SimulateBuildingRequest(BaseModel):
+    width: float
+    height: float
+    floors: list[FloorIn]
+    floor_attenuation_db: float = 15.0
+    freq_mhz: float = 2400.0
+    points_per_wavelength: int = 15
+    mode: Literal["single", "multi"] = "single"
+
+
+class SimulateBuildingResponse(BaseModel):
+    nx: int
+    ny: int
+    dx: float
+    floors_power_dbm: list[list[list[float]]]
+    elapsed_s: float
+    mode: str

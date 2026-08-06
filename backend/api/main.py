@@ -5,11 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from mrfdpf.geometry import Scene, Source, Wall
+from mrfdpf.geometry import Building, Floor, Scene, Source, Wall
 from mrfdpf.materials import MATERIALS
-from mrfdpf.solver import run_simulation
+from mrfdpf.solver import run_building_simulation, run_simulation
 
-from .schemas import MaterialOut, SimulateRequest, SimulateResponse
+from .schemas import (
+    MaterialOut,
+    SimulateBuildingRequest,
+    SimulateBuildingResponse,
+    SimulateRequest,
+    SimulateResponse,
+)
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
@@ -21,6 +27,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def no_cache_static(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/materials", response_model=list[MaterialOut])
@@ -58,6 +72,50 @@ def simulate(req: SimulateRequest):
         ny=result.grid_shape[0],
         dx=result.dx,
         power_dbm=result.power_dbm.tolist(),
+        elapsed_s=result.elapsed_s,
+        mode=result.mode,
+    )
+
+
+@app.post("/api/simulate_building", response_model=SimulateBuildingResponse)
+def simulate_building(req: SimulateBuildingRequest):
+    if not req.floors:
+        raise HTTPException(400, "at least one floor is required")
+    if not any(f.sources for f in req.floors):
+        raise HTTPException(400, "at least one source is required")
+    for floor in req.floors:
+        for wall in floor.walls:
+            if wall.material not in MATERIALS:
+                raise HTTPException(400, f"unknown material '{wall.material}'")
+
+    building = Building(
+        width=req.width,
+        height=req.height,
+        floor_attenuation_db=req.floor_attenuation_db,
+        floors=[
+            Floor(
+                walls=[Wall(w.x1, w.y1, w.x2, w.y2, w.material, w.thickness) for w in f.walls],
+                sources=[Source(s.x, s.y, s.power_dbm) for s in f.sources],
+            )
+            for f in req.floors
+        ],
+    )
+
+    try:
+        result = run_building_simulation(
+            building,
+            freq_hz=req.freq_mhz * 1e6,
+            points_per_wavelength=req.points_per_wavelength,
+            mode=req.mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return SimulateBuildingResponse(
+        nx=result.grid_shape[1],
+        ny=result.grid_shape[0],
+        dx=result.dx,
+        floors_power_dbm=[p.tolist() for p in result.floors_power_dbm],
         elapsed_s=result.elapsed_s,
         mode=result.mode,
     )

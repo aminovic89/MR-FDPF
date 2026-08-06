@@ -19,7 +19,16 @@
         <label>Hauteur (m) <input id="domain-height" type="number" value="6" min="1" step="0.5"></label>
       </section>
       <section>
-        <h2>Outils</h2>
+        <h2>Étages</h2>
+        <div id="floor-tabs" class="floor-tabs"></div>
+        <div class="tool-buttons">
+          <button id="add-floor-btn" class="secondary">+ Étage</button>
+          <button id="remove-floor-btn" class="secondary">− Étage</button>
+        </div>
+        <label>Atténuation inter-étage (dB) <input id="floor-attenuation" type="number" value="15" step="1" min="0"></label>
+      </section>
+      <section>
+        <h2>Outils (étage courant)</h2>
         <div class="tool-buttons">
           <button data-tool="wall" class="active">Mur</button>
           <button data-tool="source">Source</button>
@@ -27,7 +36,7 @@
         </div>
         <label>Matériau <select id="material-select"></select></label>
         <label>Puissance source (dBm) <input id="source-power" type="number" value="20" step="1"></label>
-        <button id="clear-btn" class="secondary">Vider la scène</button>
+        <button id="clear-btn" class="secondary">Vider l'étage courant</button>
       </section>
       <section>
         <h2>Simulation</h2>
@@ -44,10 +53,10 @@
       </section>
       <section>
         <h2>Fichier</h2>
-        <button id="export-scene-btn" class="secondary">Exporter la scène (JSON)</button>
-        <button id="import-scene-btn" class="secondary">Importer une scène</button>
+        <button id="export-scene-btn" class="secondary">Exporter le bâtiment (JSON)</button>
+        <button id="import-scene-btn" class="secondary">Importer un bâtiment</button>
         <input id="import-scene-input" type="file" accept="application/json" hidden>
-        <button id="export-image-btn" class="secondary">Exporter l'image (PNG)</button>
+        <button id="export-image-btn" class="secondary">Exporter l'étage affiché (PNG)</button>
       </section>
     </aside>
     <main class="canvas-wrap">
@@ -56,6 +65,10 @@
     </main>
   </div>
 </div>
-<script type="module" src="/static/src/main.js"></script>
+<script>
+  window.addEventListener('error', (e) => console.error('GLOBAL ERROR', e.message, e.filename, e.lineno, e.colno));
+  window.addEventListener('unhandledrejection', (e) => console.error('REJECTION', e.reason && e.reason.message, e.reason && e.reason.stack));
+</script>
+<script type="module" src="/static/src/main.js?v=3"></script>
 </body>
 </html>

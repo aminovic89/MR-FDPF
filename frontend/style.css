@@ -81,6 +81,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .tool-buttons button.active { background: #2563eb; border-color: #2563eb; }
 
+.floor-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.floor-tabs button {
+  background: #1c1f27;
+  border: 1px solid #2c2f3a;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+.floor-tabs button.active { background: #2563eb; border-color: #2563eb; }
+
 .status { font-size: 0.8rem; color: #9aa0ac; min-height: 1.2em; }
 
 .canvas-wrap {

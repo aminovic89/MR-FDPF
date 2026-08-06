@@ -31,3 +31,25 @@ class Scene:
     height: float  # meters
     walls: list[Wall] = field(default_factory=list)
     sources: list[Source] = field(default_factory=list)
+
+
+@dataclass
+class Floor:
+    """One story of a building: its own 2D layout (walls + sources), sharing
+    the building's footprint (width/height)."""
+
+    walls: list[Wall] = field(default_factory=list)
+    sources: list[Source] = field(default_factory=list)
+
+
+@dataclass
+class Building:
+    """A stack of floors sharing one footprint. Vertical (cross-floor)
+    coupling is modeled as a flat per-floor-slab attenuation rather than a
+    true 3D solve -- see solver.run_building_simulation for the physical
+    reasoning and its limits."""
+
+    width: float
+    height: float
+    floors: list[Floor] = field(default_factory=list)
+    floor_attenuation_db: float = 15.0
