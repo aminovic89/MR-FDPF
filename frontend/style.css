@@ -71,6 +71,8 @@ button.secondary { background: #3a3d47; }
 button:hover { filter: brightness(1.1); }
 button:disabled { opacity: 0.5; cursor: default; }
 
+.panel section > button { display: block; width: 100%; margin-bottom: 0.5rem; }
+
 .tool-buttons { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
 .tool-buttons button {
   flex: 1;

@@ -17,6 +17,10 @@ const simulateBtn = document.getElementById("simulate-btn");
 const clearBtn = document.getElementById("clear-btn");
 const statusEl = document.getElementById("status");
 const legendCanvas = document.getElementById("legend-canvas");
+const exportSceneBtn = document.getElementById("export-scene-btn");
+const importSceneBtn = document.getElementById("import-scene-btn");
+const importSceneInput = document.getElementById("import-scene-input");
+const exportImageBtn = document.getElementById("export-image-btn");
 
 async function init() {
   drawLegend(legendCanvas);
@@ -81,6 +85,57 @@ simulateBtn.addEventListener("click", async () => {
   } finally {
     simulateBtn.disabled = false;
   }
+});
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+exportSceneBtn.addEventListener("click", () => {
+  const payload = {
+    scene: editor.scene,
+    freq_mhz: parseFloat(freqInput.value),
+    points_per_wavelength: parseInt(ppwInput.value, 10),
+    mode: modeSelect.value,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  downloadBlob(blob, "scene_mrfdpf.json");
+});
+
+importSceneBtn.addEventListener("click", () => importSceneInput.click());
+
+importSceneInput.addEventListener("change", async () => {
+  const file = importSceneInput.files[0];
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const scene = payload.scene || {};
+    widthInput.value = scene.width ?? widthInput.value;
+    heightInput.value = scene.height ?? heightInput.value;
+    editor.setDomain(parseFloat(widthInput.value), parseFloat(heightInput.value));
+    editor.scene.walls = scene.walls || [];
+    editor.scene.sources = scene.sources || [];
+    editor.lastResult = null;
+    editor.render();
+
+    if (payload.freq_mhz) freqInput.value = payload.freq_mhz;
+    if (payload.points_per_wavelength) ppwInput.value = payload.points_per_wavelength;
+    if (payload.mode) modeSelect.value = payload.mode;
+    statusEl.textContent = "Scène importée.";
+  } catch (err) {
+    statusEl.textContent = `Import impossible: ${err.message}`;
+  } finally {
+    importSceneInput.value = "";
+  }
+});
+
+exportImageBtn.addEventListener("click", () => {
+  canvas.toBlob((blob) => downloadBlob(blob, "couverture_mrfdpf.png"), "image/png");
 });
 
 init();

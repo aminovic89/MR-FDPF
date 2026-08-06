@@ -42,6 +42,13 @@
         <button id="simulate-btn">Simuler</button>
         <p id="status" class="status"></p>
       </section>
+      <section>
+        <h2>Fichier</h2>
+        <button id="export-scene-btn" class="secondary">Exporter la scène (JSON)</button>
+        <button id="import-scene-btn" class="secondary">Importer une scène</button>
+        <input id="import-scene-input" type="file" accept="application/json" hidden>
+        <button id="export-image-btn" class="secondary">Exporter l'image (PNG)</button>
+      </section>
     </aside>
     <main class="canvas-wrap">
       <canvas id="scene-canvas"></canvas>
