@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mrfdpf-backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source .venv/bin/activate && PYTHONPATH=backend uvicorn api.main:app --reload --port 8000"],
+      "port": 8000
+    }
+  ]
+}

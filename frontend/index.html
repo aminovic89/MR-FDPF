@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MR-FDPF — Simulateur de propagation indoor</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>MR-FDPF — Propagation radio indoor</h1>
+  </header>
+  <div class="layout">
+    <aside class="panel">
+      <section>
+        <h2>Domaine</h2>
+        <label>Largeur (m) <input id="domain-width" type="number" value="8" min="1" step="0.5"></label>
+        <label>Hauteur (m) <input id="domain-height" type="number" value="6" min="1" step="0.5"></label>
+      </section>
+      <section>
+        <h2>Outils</h2>
+        <div class="tool-buttons">
+          <button data-tool="wall" class="active">Mur</button>
+          <button data-tool="source">Source</button>
+          <button data-tool="erase">Effacer</button>
+        </div>
+        <label>Matériau <select id="material-select"></select></label>
+        <label>Puissance source (dBm) <input id="source-power" type="number" value="20" step="1"></label>
+        <button id="clear-btn" class="secondary">Vider la scène</button>
+      </section>
+      <section>
+        <h2>Simulation</h2>
+        <label>Fréquence (MHz) <input id="freq-mhz" type="number" value="2400" step="100"></label>
+        <label>Résolution (pts/longueur d'onde) <input id="ppw" type="number" value="8" min="4" max="30"></label>
+        <label>Solveur
+          <select id="mode-select">
+            <option value="single">Mono-résolution (direct)</option>
+            <option value="multi">Multi-résolution (sous-structuration)</option>
+          </select>
+        </label>
+        <button id="simulate-btn">Simuler</button>
+        <p id="status" class="status"></p>
+      </section>
+    </aside>
+    <main class="canvas-wrap">
+      <canvas id="scene-canvas"></canvas>
+      <canvas id="legend-canvas" width="300" height="34"></canvas>
+    </main>
+  </div>
+</div>
+<script type="module" src="/static/src/main.js"></script>
+</body>
+</html>
